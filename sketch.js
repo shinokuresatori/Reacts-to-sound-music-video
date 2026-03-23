@@ -5,7 +5,7 @@ let amp;
 let particles = [];
 
 function preload() {
-  song = loadSound("music.wav");
+  song = loadSound("music.mp3");
 }
 
 function setup() {
