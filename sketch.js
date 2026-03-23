@@ -25,12 +25,14 @@ function setup() {
   fft = new p5.FFT(0.9, 1024);
   amp = new p5.Amplitude();
 
+  fft.setInput(song);
+  amp.setInput(song);
+
   for (let i = 0; i < 150; i++) {
     particles.push(new Particle());
   }
 
   textAlign(CENTER, CENTER);
-  fill(255);
   textSize(24);
 }
 
@@ -38,21 +40,23 @@ function draw() {
 
   background(0, 30);
 
+  // ロード待ち
   if (!loaded) {
     fill(255);
-    text("loading...", width/2, height/2);
+    text("loading audio...", width/2, height/2);
     return;
   }
 
+  // 再生待ち
   if (!song.isPlaying()) {
     fill(255);
-    text("click to start", width/2, height/2);
+    textSize(40);
+    text("dansoutainowarutsu", width/2, height/2 - 40);
+
+    textSize(20);
+    text("click to start", width/2, height/2 + 20);
     return;
   }
-
-  translate(width / 2, height / 2);
-
-  let spectrum = fft.analyze();
 
   let spectrum = fft.analyze();
 
@@ -62,8 +66,10 @@ function draw() {
 
   let level = amp.getLevel();
 
+  push();
   translate(width / 2, height / 2);
 
+  // 中央の円
   noFill();
   stroke(bass, mid, treble);
   strokeWeight(2);
@@ -71,6 +77,7 @@ function draw() {
   let size = map(bass, 0, 255, 100, 500);
   ellipse(0, 0, size);
 
+  // 波形リング
   beginShape();
   for (let i = 0; i < spectrum.length; i += 10) {
 
@@ -84,22 +91,77 @@ function draw() {
   }
   endShape(CLOSE);
 
+  // パーティクル
   for (let p of particles) {
     p.update(level, treble);
     p.show();
   }
 
+  // キックフラッシュ
   if (bass > 200) {
     fill(255, 40);
     rect(-width / 2, -height / 2, width, height);
+  }
+
+  pop();
+
+  // ラストフェード
+  if (song.currentTime() > song.duration() - 5) {
+    fill(0, 20);
+    rect(0, 0, width, height);
   }
 }
 
 function mousePressed() {
 
   userStartAudio();
+  fullscreen(true);
 
   if (loaded && !song.isPlaying()) {
     song.play();
+  }
+}
+
+function touchStarted() {
+
+  userStartAudio();
+  fullscreen(true);
+
+  if (loaded && !song.isPlaying()) {
+    song.play();
+  }
+
+  return false;
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+class Particle {
+
+  constructor() {
+    this.x = random(-width, width);
+    this.y = random(-height, height);
+    this.size = random(2, 6);
+  }
+
+  update(level, treble) {
+
+    this.x += random(-1, 1) * level * 50;
+    this.y += random(-1, 1) * level * 50;
+
+    if (this.x > width) this.x = -width;
+    if (this.x < -width) this.x = width;
+    if (this.y > height) this.y = -height;
+    if (this.y < -height) this.y = height;
+
+    this.size = map(treble, 0, 255, 2, 10);
+  }
+
+  show() {
+    noStroke();
+    fill(255);
+    ellipse(this.x, this.y, this.size);
   }
 }
