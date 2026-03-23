@@ -3,9 +3,19 @@ let fft;
 let amp;
 
 let particles = [];
+let loaded = false;
 
 function preload() {
-  song = loadSound("_feat_.mp3");
+  song = loadSound(
+    "_feat_.mp3",
+    () => {
+      loaded = true;
+      console.log("audio loaded");
+    },
+    () => {
+      console.log("audio load failed");
+    }
+  );
 }
 
 function setup() {
@@ -28,6 +38,11 @@ function draw() {
 
   background(0, 30);
 
+  if (!loaded) {
+    text("loading audio...", width/2, height/2);
+    return;
+  }
+
   if (!song.isPlaying()) {
     text("click to start", width / 2, height / 2);
     return;
@@ -43,16 +58,13 @@ function draw() {
 
   translate(width / 2, height / 2);
 
-  // 中央の抽象円
   noFill();
   stroke(bass, mid, treble);
   strokeWeight(2);
 
   let size = map(bass, 0, 255, 100, 500);
-
   ellipse(0, 0, size);
 
-  // 波形リング
   beginShape();
   for (let i = 0; i < spectrum.length; i += 10) {
 
@@ -66,13 +78,11 @@ function draw() {
   }
   endShape(CLOSE);
 
-  // パーティクル
   for (let p of particles) {
     p.update(level, treble);
     p.show();
   }
 
-  // キックっぽいフラッシュ
   if (bass > 200) {
     fill(255, 40);
     rect(-width / 2, -height / 2, width, height);
@@ -81,37 +91,9 @@ function draw() {
 
 function mousePressed() {
 
-  userStartAudio(); // これが重要
+  userStartAudio();
 
-  if (!song.isPlaying()) {
+  if (loaded && !song.isPlaying()) {
     song.play();
-  }
-}
-
-class Particle {
-
-  constructor() {
-    this.x = random(-width, width);
-    this.y = random(-height, height);
-    this.size = random(2, 6);
-  }
-
-  update(level, treble) {
-
-    this.x += random(-1, 1) * level * 50;
-    this.y += random(-1, 1) * level * 50;
-
-    if (this.x > width) this.x = -width;
-    if (this.x < -width) this.x = width;
-    if (this.y > height) this.y = -height;
-    if (this.y < -height) this.y = height;
-
-    this.size = map(treble, 0, 255, 2, 10);
-  }
-
-  show() {
-    noStroke();
-    fill(255);
-    ellipse(this.x, this.y, this.size);
   }
 }
