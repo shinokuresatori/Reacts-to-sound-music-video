@@ -80,6 +80,9 @@ function draw() {
 }
 
 function mousePressed() {
+
+  userStartAudio(); // これが重要
+
   if (!song.isPlaying()) {
     song.play();
   }
