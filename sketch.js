@@ -39,14 +39,20 @@ function draw() {
   background(0, 30);
 
   if (!loaded) {
-    text("loading audio...", width/2, height/2);
+    fill(255);
+    text("loading...", width/2, height/2);
     return;
   }
 
   if (!song.isPlaying()) {
-    text("click to start", width / 2, height / 2);
+    fill(255);
+    text("click to start", width/2, height/2);
     return;
   }
+
+  translate(width / 2, height / 2);
+
+  let spectrum = fft.analyze();
 
   let spectrum = fft.analyze();
 
