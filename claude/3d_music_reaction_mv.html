@@ -667,55 +667,49 @@ function registerMorphMeshes(root) {
 }
 
 function applyVertexDeform(volume, time) {
-  // ── 「ぐにゃり」デザイン ──
-  // 高周波ノイズ(ざらざら)ではなく、
-  // ・低周波のうねり（空間周波数を極力下げる）
-  // ・頂点の法線方向に膨らませる（表面が波打つ感覚）
-  // ・音量でアニメ速度と振れ幅を変える
-  const strength = Math.pow(volume, 1.1) * 0.7;  // 音量依存の変形量
-  const speed    = 0.6 + volume * 1.4;            // うねりの速さ
-  const FREQ     = 0.55;                           // 空間周波数：低いほど大きくうねる
+  // 参考画像のように「形が別物になるくらい」大きくうねる変形
+  // ・strength を大幅に増やす（モデルサイズの30〜80%変位）
+  // ・低周波(大きいうねり) + 中周波(細かい波) の2層重ね
+  // ・XYZ 独立したノイズで「引っ張られる」感覚
+  // ・音量ゼロでも微小にうねり続ける（生き物感）
+
+  const baseStrength = 0.12;                        // 無音時の最小うねり
+  const strength = baseStrength + Math.pow(volume, 0.8) * 1.6; // 最大で元サイズの160%変位
+  const speed    = 0.4 + volume * 1.8;
+  const FREQ_LO  = 0.30;   // 大きいうねり（形がぐにゃっと変わる）
+  const FREQ_MD  = 0.90;   // 中程度の波（表面のヨレ感）
+  const MIX_MD   = 0.28;   // 中周波の混合比
 
   for (const { geometry, origPositions } of morphTargets) {
-    const pos     = geometry.attributes.position;
-    const arr     = pos.array;
-    const count   = pos.count;
-    const normals = geometry.attributes.normal;
-
-    // 法線がない場合は先に計算
-    if (!normals) geometry.computeVertexNormals();
-    const nArr = geometry.attributes.normal ? geometry.attributes.normal.array : null;
-
-    const t = time * speed;
+    const pos   = geometry.attributes.position;
+    const arr   = pos.array;
+    const count = pos.count;
+    const t     = time * speed;
 
     for (let i = 0; i < count; i++) {
       const ox = origPositions[i*3],
             oy = origPositions[i*3+1],
             oz = origPositions[i*3+2];
 
-      // ── 低周波ノイズを1サンプルだけ取る（3軸で別オフセット） ──
-      // 同じ頂点の近傍は似た値になるので「面がまとまって動く」
-      const wave = noise3(
-        ox * FREQ + t * 0.55 + 1.1,
-        oy * FREQ + t * 0.38 + 3.7,
-        oz * FREQ + t * 0.45 + 7.3
-      );
+      // ── レイヤー1: 低周波（大うねり） ──
+      // X/Y/Z それぞれ独立したノイズで「引っ張られる」方向がバラバラ
+      const lo_x = noise3(ox*FREQ_LO + t*0.50 + 0.0,  oy*FREQ_LO + t*0.15 + 4.1,  oz*FREQ_LO + 8.3);
+      const lo_y = noise3(ox*FREQ_LO + t*0.18 + 12.5, oy*FREQ_LO + t*0.42 + 1.7,  oz*FREQ_LO + 6.2);
+      const lo_z = noise3(ox*FREQ_LO + t*0.33 + 7.9,  oy*FREQ_LO + t*0.22 + 9.4,  oz*FREQ_LO + t*0.28 + 2.6);
 
-      // 法線方向に押し出す量（ぷよぷよ・ゼリー感）
-      const disp = wave * strength;
+      // ── レイヤー2: 中周波（表面のヨレ・しわ感） ──
+      const md_x = noise3(ox*FREQ_MD + t*0.70 + 3.3,  oy*FREQ_MD + 6.1,            oz*FREQ_MD + t*0.55 + 1.2);
+      const md_y = noise3(ox*FREQ_MD + 5.8,            oy*FREQ_MD + t*0.60 + 2.9,  oz*FREQ_MD + t*0.40 + 8.7);
+      const md_z = noise3(ox*FREQ_MD + t*0.45 + 9.1,  oy*FREQ_MD + t*0.35 + 4.6,  oz*FREQ_MD + 0.8);
 
-      if (nArr) {
-        const nx = nArr[i*3], ny = nArr[i*3+1], nz = nArr[i*3+2];
-        arr[i*3]   = ox + nx * disp;
-        arr[i*3+1] = oy + ny * disp;
-        arr[i*3+2] = oz + nz * disp;
-      } else {
-        // 法線がなければ原点からの方向で代用
-        const len = Math.sqrt(ox*ox + oy*oy + oz*oz) || 1;
-        arr[i*3]   = ox + (ox/len) * disp;
-        arr[i*3+1] = oy + (oy/len) * disp;
-        arr[i*3+2] = oz + (oz/len) * disp;
-      }
+      // 合成（低周波主体 + 中周波を少し混ぜる）
+      const dx = (lo_x + md_x * MIX_MD) * strength;
+      const dy = (lo_y + md_y * MIX_MD) * strength;
+      const dz = (lo_z + md_z * MIX_MD) * strength;
+
+      arr[i*3]   = ox + dx;
+      arr[i*3+1] = oy + dy;
+      arr[i*3+2] = oz + dz;
     }
     pos.needsUpdate = true;
     geometry.computeVertexNormals();
@@ -752,8 +746,8 @@ function render() {
 
   const { bass, mid, hi, volume, raw } = getFreqBands();
 
-  // smooth the volume for deformation (fast attack, very slow release = jelly feel)
-  smoothVolume += (volume - smoothVolume) * (volume > smoothVolume ? 0.65 : 0.06);
+  // smooth volume: 瞬間的に上がり、ゆっくり戻る（形が引き延ばされたまま残る感）
+  smoothVolume += (volume - smoothVolume) * (volume > smoothVolume ? 0.75 : 0.04);
 
   // background
   drawBg(bass, mid, hi);
