@@ -694,11 +694,9 @@ document.getElementById('btn-start').addEventListener('click', async ()=>{
   let model;
   if(glbBlob){
     try { model = await loadGLB(glbBlob); }
-    catch(e){ console.error('GLB load error:', e); model = null; }
+    catch(e){ model = null; }
   }
-  if(!model){
-    model = createPlaceholder();
-  }
+  if(!model) model = createPlaceholder();
   document.getElementById('status').textContent = '';
 
   // idleModelをシーンから除去
@@ -755,7 +753,7 @@ document.getElementById('btn-reset').addEventListener('click', ()=>{
   idleLoop();
 });
 
-// アイドルループ — ページ開いた瞬間からプレースホルダーを表示・変形
+// アイドルループ — ページ開いた瞬間からプレースホルダーを表示（変形なし・静止回転）
 function idleLoop(){
   if(loadedModel) return;
   requestAnimationFrame(idleLoop);
@@ -764,8 +762,6 @@ function idleLoop(){
   if(idleModel){
     idleModel.rotation.y = time * 0.25;
     idleModel.rotation.x = Math.sin(time * 0.3) * 0.15;
-    // 無音でも微小にぐにゃる
-    applyVertexDeform(0, time);
   }
   threeRenderer.render(threeScene, threeCamera);
 }
