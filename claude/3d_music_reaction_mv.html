@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WEB MV — AUDIO REACTIVE 3D</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;600&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #020408;
+    --accent1: #00ffe1;
+    --accent2: #ff2d6e;
+    --accent3: #7b4fff;
+    --ui-glass: rgba(0,255,225,0.06);
+    --ui-border: rgba(0,255,225,0.18);
+    --text: #c8f0ff;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+    cursor: crosshair;
+  }
+
+  #canvas-bg {
+    position: fixed; top:0; left:0;
+    width:100%; height:100%;
+    z-index: 0;
+  }
+
+  #three-canvas {
+    position: fixed; top:0; left:0;
+    width:100%; height:100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* ── UI Overlay ── */
+  #ui {
+    position: fixed; z-index: 10;
+    width:100%; height:100%;
+    pointer-events: none;
+  }
+
+  /* corner decorations */
+  .corner {
+    position: absolute;
+    width: 32px; height: 32px;
+    border-color: var(--accent1);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .corner.tl { top:16px; left:16px; border-width:2px 0 0 2px; }
+  .corner.tr { top:16px; right:16px; border-width:2px 2px 0 0; }
+  .corner.bl { bottom:16px; left:16px; border-width:0 0 2px 2px; }
+  .corner.br { bottom:16px; right:16px; border-width:0 2px 2px 0; }
+
+  /* scanline */
+  #scanline {
+    position: absolute; top:0; left:0;
+    width:100%; height:2px;
+    background: linear-gradient(90deg, transparent, var(--accent1), transparent);
+    opacity: 0.15;
+    animation: scan 4s linear infinite;
+  }
+  @keyframes scan { from{top:0} to{top:100%} }
+
+  /* title */
+  #title-block {
+    position: absolute;
+    top: 28px; left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  #title-block h1 {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 300;
+    font-size: clamp(11px, 1.4vw, 16px);
+    letter-spacing: 0.45em;
+    color: var(--accent1);
+    opacity: 0.7;
+    text-transform: uppercase;
+  }
+
+  /* freq bars */
+  #freq-bar {
+    position: absolute; bottom: 100px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 2px;
+    align-items: flex-end;
+    height: 52px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  #freq-bar.active { opacity: 1; }
+  .freq-col {
+    width: 3px;
+    background: var(--accent1);
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+    transition: height 0.04s;
+    box-shadow: 0 0 6px var(--accent1);
+  }
+
+  /* controls panel */
+  #controls {
+    position: absolute;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    pointer-events: all;
+    background: var(--ui-glass);
+    border: 1px solid var(--ui-border);
+    border-radius: 40px;
+    padding: 10px 20px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  button {
+    background: none;
+    border: 1px solid var(--ui-border);
+    color: var(--accent1);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  button:hover {
+    background: rgba(0,255,225,0.1);
+    box-shadow: 0 0 12px rgba(0,255,225,0.3);
+  }
+  button.active {
+    background: var(--accent1);
+    color: #000;
+  }
+
+  #track-name {
+    font-size: 10px;
+    color: var(--accent1);
+    opacity: 0.7;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* upload panel - center stage */
+  #upload-panel {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    pointer-events: all;
+    transition: opacity 0.6s;
+  }
+  #upload-panel.hidden { opacity:0; pointer-events:none; }
+
+  .upload-zone {
+    width: 260px;
+    border: 1px dashed var(--ui-border);
+    border-radius: 12px;
+    padding: 24px 20px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--ui-glass);
+    backdrop-filter: blur(8px);
+    transition: all 0.3s;
+    position: relative;
+  }
+  .upload-zone:hover {
+    border-color: var(--accent1);
+    background: rgba(0,255,225,0.08);
+    box-shadow: 0 0 24px rgba(0,255,225,0.12);
+  }
+  .upload-zone .icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .upload-zone p {
+    font-size: 11px;
+    opacity: 0.6;
+    line-height: 1.6;
+  }
+  .upload-zone small {
+    font-size: 9px;
+    opacity: 0.35;
+    display: block;
+    margin-top: 6px;
+  }
+  .upload-zone input {
+    position: absolute; opacity:0;
+    top:0; left:0; width:100%; height:100%;
+    cursor: pointer;
+  }
+  .upload-zone.loaded {
+    border-color: var(--accent1);
+    border-style: solid;
+  }
+  .upload-zone.loaded .icon::after { content: " ✓"; font-size:14px; color:var(--accent1); }
+
+  /* status */
+  #status {
+    position: absolute;
+    top: 52px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    opacity: 0.35;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+
+  /* BPM / level meters */
+  #meters {
+    position: absolute;
+    top: 50%; right: 20px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  #meters.active { opacity: 1; }
+  .meter-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 8px;
+    letter-spacing: 0.15em;
+    opacity: 0.5;
+  }
+  .meter-bar {
+    width: 4px;
+    height: 80px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 2px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column-reverse;
+  }
+  .meter-fill {
+    width: 100%;
+    border-radius: 2px;
+    transition: height 0.05s;
+  }
+  .meter-fill.bass { background: var(--accent2); box-shadow:0 0 6px var(--accent2); }
+  .meter-fill.mid  { background: var(--accent1); box-shadow:0 0 6px var(--accent1); }
+  .meter-fill.hi   { background: var(--accent3); box-shadow:0 0 6px var(--accent3); }
+</style>
+</head>
+<body>
+
+<canvas id="canvas-bg"></canvas>
+<canvas id="three-canvas"></canvas>
+
+<div id="ui">
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+  <div id="scanline"></div>
+  <div id="title-block"><h1>AUDIO REACTIVE WEB MV</h1></div>
+  <div id="status">STANDBY — LOAD FILES TO BEGIN</div>
+
+  <!-- freq bar -->
+  <div id="freq-bar"></div>
+
+  <!-- side meters -->
+  <div id="meters">
+    <div class="meter-row">
+      <div class="meter-bar"><div class="meter-fill bass" id="m-bass" style="height:0%"></div></div>
+      <span>BASS</span>
+    </div>
+    <div class="meter-row">
+      <div class="meter-bar"><div class="meter-fill mid" id="m-mid" style="height:0%"></div></div>
+      <span>MID</span>
+    </div>
+    <div class="meter-row">
+      <div class="meter-bar"><div class="meter-fill hi" id="m-hi" style="height:0%"></div></div>
+      <span>HI</span>
+    </div>
+  </div>
+
+  <!-- upload panel -->
+  <div id="upload-panel">
+    <div class="upload-zone" id="zone-glb">
+      <span class="icon" id="glb-icon">⬡</span>
+      <p>3D モデルをドロップ<br>または クリックして選択</p>
+      <small>GLB / GLTF 対応</small>
+      <input type="file" id="input-glb" accept=".glb,.gltf">
+    </div>
+    <div class="upload-zone" id="zone-audio">
+      <span class="icon" id="audio-icon">♫</span>
+      <p>音楽ファイルをドロップ<br>または クリックして選択</p>
+      <small>WAV / MP3 / OGG 対応</small>
+      <input type="file" id="input-audio" accept=".wav,.mp3,.ogg,.flac,.m4a">
+    </div>
+    <button id="btn-start" style="opacity:0.3;pointer-events:none">▶ START</button>
+  </div>
+
+  <!-- playback controls -->
+  <div id="controls">
+    <button id="btn-play" style="display:none">▶</button>
+    <button id="btn-pause" style="display:none">⏸</button>
+    <span id="track-name" style="display:none"></span>
+    <button id="btn-reset" style="display:none">↺ RESET</button>
+  </div>
+</div>
+
+<!-- Three.js r128 (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let audioCtx, analyser, source, audioBuffer;
+let glbBlob, audioFile;
+let threeScene, threeCamera, threeRenderer;
+let loadedModel = null;
+let isPlaying = false;
+let animId;
+
+const FFT = 256;
+let freqData = new Uint8Array(FFT);
+
+// ═══════════════════════════════════════
+//  BACKGROUND CANVAS (particles + geo)
+// ═══════════════════════════════════════
+const bgCanvas = document.getElementById('canvas-bg');
+const bgCtx = bgCanvas.getContext('2d');
+let bgW, bgH;
+const particles = [];
+
+function resizeBg() {
+  bgW = bgCanvas.width = window.innerWidth;
+  bgH = bgCanvas.height = window.innerHeight;
+}
+resizeBg();
+window.addEventListener('resize', resizeBg);
+
+// create background particles
+for (let i = 0; i < 140; i++) {
+  particles.push({
+    x: Math.random() * 2 - 1,
+    y: Math.random() * 2 - 1,
+    z: Math.random(),
+    vx: (Math.random() - 0.5) * 0.0004,
+    vy: (Math.random() - 0.5) * 0.0004,
+    size: Math.random() * 1.8 + 0.4,
+    type: Math.floor(Math.random() * 3), // 0=dot 1=tri 2=square
+    rot: Math.random() * Math.PI * 2,
+    rotv: (Math.random() - 0.5) * 0.02,
+    hue: Math.random() < 0.5 ? 175 : (Math.random() < 0.5 ? 340 : 270)
+  });
+}
+
+// geometry lines (icosahedron wireframe projected)
+const GEO_VERTS = (() => {
+  const t = (1 + Math.sqrt(5)) / 2;
+  const v = [
+    [-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],
+    [0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],
+    [t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]
+  ].map(([x,y,z])=>{const l=Math.sqrt(x*x+y*y+z*z);return[x/l,y/l,z/l];});
+  return v;
+})();
+const GEO_EDGES = [
+  [0,1],[0,5],[0,7],[0,10],[0,11],
+  [1,5],[1,7],[1,8],[1,9],
+  [2,3],[2,4],[2,6],[2,10],[2,11],
+  [3,4],[3,6],[3,8],[3,9],
+  [4,5],[4,9],[4,11],
+  [5,9],[5,11],[6,7],[6,8],[6,10],
+  [7,8],[7,10],[8,9],[10,11]
+];
+
+let geoRot = 0;
+
+function drawBg(bass, mid, hi) {
+  bgCtx.clearRect(0, 0, bgW, bgH);
+
+  // vignette
+  const vg = bgCtx.createRadialGradient(bgW/2,bgH/2,0,bgW/2,bgH/2,bgW*0.8);
+  vg.addColorStop(0,'rgba(2,4,8,0)');
+  vg.addColorStop(1,'rgba(2,4,8,0.92)');
+  bgCtx.fillStyle = vg;
+  bgCtx.fillRect(0,0,bgW,bgH);
+
+  const cx = bgW/2, cy = bgH/2;
+  const scale = Math.min(bgW, bgH) * 0.38 * (1 + bass*0.18);
+
+  // rotating icosahedron wireframe
+  geoRot += 0.003 + bass * 0.012;
+  const cosR = Math.cos(geoRot), sinR = Math.sin(geoRot);
+  const cosP = Math.cos(geoRot * 0.61), sinP = Math.sin(geoRot * 0.61);
+
+  function project([x,y,z]) {
+    // Y rotation
+    let x2 = x*cosR - z*sinR, z2 = x*sinR + z*cosR;
+    // X rotation
+    let y2 = y*cosP - z2*sinP, z3 = y*sinP + z2*cosP;
+    const fov = 3.5 + z3;
+    return [cx + x2/fov * scale * 1.8, cy + y2/fov * scale * 1.8];
+  }
+
+  bgCtx.strokeStyle = `rgba(0,255,225,${0.07 + mid*0.15})`;
+  bgCtx.lineWidth = 0.6;
+  for (const [a,b] of GEO_EDGES) {
+    const [ax,ay] = project(GEO_VERTS[a]);
+    const [bx,by] = project(GEO_VERTS[b]);
+    bgCtx.beginPath(); bgCtx.moveTo(ax,ay); bgCtx.lineTo(bx,by); bgCtx.stroke();
+  }
+
+  // particles
+  for (const p of particles) {
+    p.x += p.vx + mid * 0.001 * (Math.random()-0.5);
+    p.y += p.vy + bass * 0.001 * (Math.random()-0.5);
+    p.rot += p.rotv;
+    if (p.x > 1.1) p.x = -1.1;
+    if (p.x < -1.1) p.x = 1.1;
+    if (p.y > 1.1) p.y = -1.1;
+    if (p.y < -1.1) p.y = 1.1;
+
+    const px = (p.x+1)/2 * bgW;
+    const py = (p.y+1)/2 * bgH;
+    const s = p.size * (1 + hi * 1.5) * (0.5 + p.z * 1.5);
+    const alpha = 0.15 + p.z * 0.5 + hi * 0.3;
+
+    bgCtx.save();
+    bgCtx.globalAlpha = alpha;
+    bgCtx.strokeStyle = `hsl(${p.hue},100%,65%)`;
+    bgCtx.lineWidth = 0.8;
+    bgCtx.translate(px, py);
+    bgCtx.rotate(p.rot);
+
+    if (p.type === 0) {
+      bgCtx.beginPath();
+      bgCtx.arc(0, 0, s, 0, Math.PI*2);
+      bgCtx.stroke();
+    } else if (p.type === 1) {
+      bgCtx.beginPath();
+      for (let i=0;i<3;i++){
+        const a = (i/3)*Math.PI*2 - Math.PI/2;
+        i===0?bgCtx.moveTo(Math.cos(a)*s,Math.sin(a)*s):bgCtx.lineTo(Math.cos(a)*s,Math.sin(a)*s);
+      }
+      bgCtx.closePath(); bgCtx.stroke();
+    } else {
+      bgCtx.strokeRect(-s/2,-s/2,s,s);
+    }
+    bgCtx.restore();
+  }
+}
+
+// ═══════════════════════════════════════
+//  THREE.JS SETUP
+// ═══════════════════════════════════════
+function initThree() {
+  threeScene = new THREE.Scene();
+  threeCamera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.01, 1000);
+  threeCamera.position.set(0, 0, 4);
+
+  threeRenderer = new THREE.WebGLRenderer({
+    canvas: document.getElementById('three-canvas'),
+    alpha: true,
+    antialias: true
+  });
+  threeRenderer.setPixelRatio(window.devicePixelRatio);
+  threeRenderer.setSize(window.innerWidth, window.innerHeight);
+  threeRenderer.outputEncoding = THREE.sRGBEncoding;
+  threeRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+  // lights
+  const ambLight = new THREE.AmbientLight(0x112244, 0.8);
+  threeScene.add(ambLight);
+
+  const dirLight = new THREE.DirectionalLight(0x00ffe1, 2.5);
+  dirLight.position.set(2, 4, 3);
+  threeScene.add(dirLight);
+
+  const rimLight = new THREE.DirectionalLight(0xff2d6e, 1.8);
+  rimLight.position.set(-3, -2, -2);
+  threeScene.add(rimLight);
+
+  const fillLight = new THREE.PointLight(0x7b4fff, 1.5, 20);
+  fillLight.position.set(0, 2, -3);
+  threeScene.add(fillLight);
+
+  window.addEventListener('resize', () => {
+    threeCamera.aspect = window.innerWidth/window.innerHeight;
+    threeCamera.updateProjectionMatrix();
+    threeRenderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+initThree();
+
+// ═══════════════════════════════════════
+//  GLB LOADER (manual, no GLTFLoader dep)
+//  We load via URL, parse with three-gltf
+// ═══════════════════════════════════════
+async function loadGLB(blob) {
+  return new Promise((resolve, reject) => {
+    // Dynamically import GLTFLoader from CDN alternative approach
+    // We use a script tag trick since GLTFLoader isn't bundled with r128 CDN
+    if (!window._gltfLoaderReady) {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/loaders/GLTFLoader.js';
+      s.onerror = () => {
+        // fallback: load basic geometry placeholder
+        resolve(null);
+      };
+      s.onload = () => {
+        window._gltfLoaderReady = true;
+        doLoad(blob, resolve, reject);
+      };
+      document.head.appendChild(s);
+    } else {
+      doLoad(blob, resolve, reject);
+    }
+  });
+}
+
+function doLoad(blob, resolve, reject) {
+  const url = URL.createObjectURL(blob);
+  const loader = new THREE.GLTFLoader();
+  loader.load(url, (gltf) => {
+    URL.revokeObjectURL(url);
+    resolve(gltf.scene);
+  }, undefined, (err) => {
+    URL.revokeObjectURL(url);
+    reject(err);
+  });
+}
+
+function fitModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  model.scale.setScalar(2.2 / maxDim);
+  model.position.sub(center.multiplyScalar(2.2 / maxDim));
+}
+
+// fallback placeholder model
+function createPlaceholder() {
+  const group = new THREE.Group();
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x00ffe1, metalness: 0.7, roughness: 0.2,
+    wireframe: false
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  group.add(mesh);
+
+  const wgeo = new THREE.IcosahedronGeometry(1.05, 1);
+  const wmat = new THREE.MeshBasicMaterial({ color: 0x00ffe1, wireframe: true, transparent: true, opacity: 0.25 });
+  group.add(new THREE.Mesh(wgeo, wmat));
+  return group;
+}
+
+// ═══════════════════════════════════════
+//  AUDIO SETUP
+// ═══════════════════════════════════════
+async function setupAudio(file) {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = FFT * 2;
+  analyser.smoothingTimeConstant = 0.82;
+
+  const ab = await file.arrayBuffer();
+  audioBuffer = await audioCtx.decodeAudioData(ab);
+}
+
+function playAudio() {
+  if (source) { try { source.stop(); } catch(e){} }
+  source = audioCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+  source.start();
+  isPlaying = true;
+  source.onended = () => { isPlaying = false; updatePlayBtn(); };
+}
+
+function updatePlayBtn() {
+  document.getElementById('btn-play').style.display = isPlaying ? 'none' : '';
+  document.getElementById('btn-pause').style.display = isPlaying ? '' : 'none';
+}
+
+// ═══════════════════════════════════════
+//  FREQ BARS (UI)
+// ═══════════════════════════════════════
+const freqBar = document.getElementById('freq-bar');
+const BARS = 48;
+for (let i = 0; i < BARS; i++) {
+  const d = document.createElement('div');
+  d.className = 'freq-col';
+  d.style.background = `hsl(${175 + i * 3.5}, 100%, 60%)`;
+  freqBar.appendChild(d);
+}
+const freqCols = freqBar.querySelectorAll('.freq-col');
+
+// ═══════════════════════════════════════
+//  MAIN RENDER LOOP
+// ═══════════════════════════════════════
+let time = 0;
+let modelBaseScale = 1;
+
+function getFreqBands() {
+  if (!analyser) return { bass:0, mid:0, hi:0, raw:new Uint8Array(FFT) };
+  analyser.getByteFrequencyData(freqData);
+  let bass=0, mid=0, hi=0;
+  const bLen = Math.floor(FFT * 0.08);
+  const mLen = Math.floor(FFT * 0.25);
+  for (let i=0; i<bLen; i++) bass += freqData[i];
+  for (let i=bLen; i<bLen+mLen; i++) mid += freqData[i];
+  for (let i=bLen+mLen; i<FFT; i++) hi += freqData[i];
+  bass /= (bLen * 255);
+  mid  /= (mLen * 255);
+  hi   /= ((FFT - bLen - mLen) * 255);
+  return { bass, mid, hi, raw: freqData };
+}
+
+function render() {
+  animId = requestAnimationFrame(render);
+  time += 0.016;
+
+  const { bass, mid, hi, raw } = getFreqBands();
+
+  // background
+  drawBg(bass, mid, hi);
+
+  // freq bars UI
+  for (let i = 0; i < BARS; i++) {
+    const idx = Math.floor(i / BARS * FFT);
+    const h = (raw[idx] / 255) * 52;
+    freqCols[i].style.height = h + 'px';
+    freqCols[i].style.opacity = 0.4 + (raw[idx]/255)*0.6;
+  }
+
+  // meters
+  document.getElementById('m-bass').style.height = (bass*100) + '%';
+  document.getElementById('m-mid').style.height  = (mid*100) + '%';
+  document.getElementById('m-hi').style.height   = (hi*100) + '%';
+
+  // model
+  if (loadedModel) {
+    // rotate
+    loadedModel.rotation.y = time * (0.25 + bass * 0.6);
+    loadedModel.rotation.x = Math.sin(time * 0.3) * 0.2 + mid * 0.3;
+
+    // scale pulse on bass
+    const pulse = 1 + bass * 0.28 + Math.sin(time * 2) * hi * 0.05;
+    loadedModel.scale.setScalar(modelBaseScale * pulse);
+
+    // morph vertices if geometry supports it
+    loadedModel.traverse(obj => {
+      if (obj.isMesh) {
+        // emissive color shift with frequency
+        if (obj.material && obj.material.emissive !== undefined) {
+          obj.material.emissive.setHSL((time*0.05 + mid*0.3) % 1, 1, hi * 0.4 + bass*0.15);
+        }
+      }
+    });
+
+    // camera drift
+    threeCamera.position.x = Math.sin(time * 0.18) * 0.4 * (1 + mid);
+    threeCamera.position.y = Math.cos(time * 0.13) * 0.25;
+    threeCamera.lookAt(0, 0, 0);
+  }
+
+  // lights react to audio
+  if (threeScene) {
+    threeScene.children.forEach(child => {
+      if (child.isPointLight) {
+        child.intensity = 1.5 + bass * 4;
+      }
+      if (child.isDirectionalLight) {
+        child.intensity = (child.color.r > 0.5 ? 2.5 : 1.8) + mid * 2;
+      }
+    });
+  }
+
+  threeRenderer.render(threeScene, threeCamera);
+}
+
+// ═══════════════════════════════════════
+//  FILE INPUT HANDLERS
+// ═══════════════════════════════════════
+let glbReady = false, audioReady = false;
+
+function checkBothReady() {
+  if (glbReady && audioReady) {
+    document.getElementById('btn-start').style.opacity = '1';
+    document.getElementById('btn-start').style.pointerEvents = 'all';
+  }
+}
+
+document.getElementById('input-glb').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  glbBlob = file;
+  glbReady = true;
+  document.getElementById('zone-glb').classList.add('loaded');
+  document.getElementById('glb-icon').textContent = '⬡';
+  checkBothReady();
+});
+
+document.getElementById('input-audio').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  audioFile = file;
+  audioReady = true;
+  document.getElementById('zone-audio').classList.add('loaded');
+  document.getElementById('audio-icon').textContent = '♫';
+  document.getElementById('track-name').textContent = file.name.replace(/\.[^.]+$/, '');
+  checkBothReady();
+});
+
+// drag & drop
+['zone-glb','zone-audio'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.style.borderColor='var(--accent1)'; });
+  el.addEventListener('dragleave', () => { el.style.borderColor=''; });
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.style.borderColor='';
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    if (id === 'zone-glb') {
+      document.getElementById('input-glb').dispatchEvent(Object.assign(new Event('change'), { target: { files: [f] } }));
+      // manual trigger
+      glbBlob = f; glbReady = true;
+      el.classList.add('loaded');
+      document.getElementById('glb-icon').textContent = '⬡';
+      checkBothReady();
+    } else {
+      audioFile = f; audioReady = true;
+      el.classList.add('loaded');
+      document.getElementById('audio-icon').textContent = '♫';
+      document.getElementById('track-name').textContent = f.name.replace(/\.[^.]+$/, '');
+      checkBothReady();
+    }
+  });
+});
+
+// ═══════════════════════════════════════
+//  START
+// ═══════════════════════════════════════
+document.getElementById('btn-start').addEventListener('click', async () => {
+  document.getElementById('status').textContent = 'LOADING MODEL...';
+
+  // load model
+  let model;
+  try {
+    model = await loadGLB(glbBlob);
+  } catch(e) {
+    model = null;
+  }
+  if (!model) {
+    model = createPlaceholder();
+    document.getElementById('status').textContent = 'PLACEHOLDER MODEL — GLB LOAD FAILED';
+  } else {
+    document.getElementById('status').textContent = 'INITIALIZING AUDIO...';
+  }
+
+  fitModel(model);
+  modelBaseScale = model.scale.x;
+  loadedModel = model;
+  threeScene.add(model);
+
+  // audio
+  await setupAudio(audioFile);
+
+  // hide upload, show controls
+  document.getElementById('upload-panel').classList.add('hidden');
+  document.getElementById('btn-play').style.display = '';
+  document.getElementById('btn-pause').style.display = 'none';
+  document.getElementById('track-name').style.display = '';
+  document.getElementById('btn-reset').style.display = '';
+  document.getElementById('freq-bar').classList.add('active');
+  document.getElementById('meters').classList.add('active');
+  document.getElementById('status').textContent = '';
+
+  // start render loop
+  render();
+
+  // play
+  playAudio();
+  updatePlayBtn();
+});
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (!isPlaying) { playAudio(); updatePlayBtn(); }
+});
+document.getElementById('btn-pause').addEventListener('click', () => {
+  if (isPlaying && source) {
+    try { source.stop(); } catch(e){}
+    isPlaying = false;
+    updatePlayBtn();
+  }
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  // stop everything, show upload panel again
+  if (source) { try { source.stop(); } catch(e){} }
+  if (animId) cancelAnimationFrame(animId);
+  isPlaying = false;
+  if (loadedModel) { threeScene.remove(loadedModel); loadedModel = null; }
+  glbReady = audioReady = false;
+  document.getElementById('upload-panel').classList.remove('hidden');
+  document.getElementById('btn-play').style.display = 'none';
+  document.getElementById('btn-pause').style.display = 'none';
+  document.getElementById('track-name').style.display = 'none';
+  document.getElementById('btn-reset').style.display = 'none';
+  document.getElementById('freq-bar').classList.remove('active');
+  document.getElementById('meters').classList.remove('active');
+  document.getElementById('btn-start').style.opacity = '0.3';
+  document.getElementById('btn-start').style.pointerEvents = 'none';
+  document.getElementById('status').textContent = 'STANDBY — LOAD FILES TO BEGIN';
+  document.querySelectorAll('.upload-zone').forEach(z => z.classList.remove('loaded'));
+  bgCtx.clearRect(0,0,bgW,bgH);
+});
+
+// idle background loop (before start)
+function idleLoop() {
+  if (loadedModel) return;
+  requestAnimationFrame(idleLoop);
+  drawBg(0, 0, 0);
+}
+idleLoop();
+</script>
+</body>
+</html>
