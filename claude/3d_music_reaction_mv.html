@@ -503,9 +503,7 @@ function applyVertexDeform(volume, time){
   const baseStrength = 0.10;
   const strength = baseStrength + Math.pow(volume, 0.8) * 1.6;
   const speed    = 0.4 + volume * 1.8;
-  const FREQ_LO  = 0.30;
-  const FREQ_MD  = 0.90;
-  const MIX_MD   = 0.28;
+  const FREQ_LO  = 0.28; // 低周波のみ＝大きくなめらかにうねる
   const t = time * speed;
 
   morphTargets.forEach(({ geometry, origPositions }, layerIdx) => {
@@ -513,21 +511,20 @@ function applyVertexDeform(volume, time){
     const arr = pos.array;
     const count = pos.count;
 
-    // 外殻（layerIdx 0,1）は位相をずらしてゆっくり独立して動く
+    // 外殻は位相をずらしてゆっくり独立して動く
     const phaseShift = layerIdx <= 1 ? 20.0 : 0.0;
-    const scaleShift = layerIdx <= 1 ? 0.55 : 1.0; // 外殻は動きが遅め
+    const scaleShift = layerIdx <= 1 ? 0.55 : 1.0;
 
     for(let i=0;i<count;i++){
       const ox=origPositions[i*3], oy=origPositions[i*3+1], oz=origPositions[i*3+2];
-      const lo_x = noise3(ox*FREQ_LO+(t+phaseShift)*0.50*scaleShift+0.0,  oy*FREQ_LO+(t+phaseShift)*0.15*scaleShift+4.1,  oz*FREQ_LO+8.3);
-      const lo_y = noise3(ox*FREQ_LO+(t+phaseShift)*0.18*scaleShift+12.5, oy*FREQ_LO+(t+phaseShift)*0.42*scaleShift+1.7,  oz*FREQ_LO+6.2);
-      const lo_z = noise3(ox*FREQ_LO+(t+phaseShift)*0.33*scaleShift+7.9,  oy*FREQ_LO+(t+phaseShift)*0.22*scaleShift+9.4,  oz*FREQ_LO+(t+phaseShift)*0.28*scaleShift+2.6);
-      const md_x = noise3(ox*FREQ_MD+(t+phaseShift)*0.70*scaleShift+3.3,  oy*FREQ_MD+6.1,          oz*FREQ_MD+(t+phaseShift)*0.55*scaleShift+1.2);
-      const md_y = noise3(ox*FREQ_MD+5.8,          oy*FREQ_MD+(t+phaseShift)*0.60*scaleShift+2.9,  oz*FREQ_MD+(t+phaseShift)*0.40*scaleShift+8.7);
-      const md_z = noise3(ox*FREQ_MD+(t+phaseShift)*0.45*scaleShift+9.1,  oy*FREQ_MD+(t+phaseShift)*0.35*scaleShift+4.6,  oz*FREQ_MD+0.8);
-      arr[i*3]   = ox + (lo_x + md_x*MIX_MD) * strength;
-      arr[i*3+1] = oy + (lo_y + md_y*MIX_MD) * strength;
-      arr[i*3+2] = oz + (lo_z + md_z*MIX_MD) * strength;
+      const tp = (t + phaseShift) * scaleShift;
+      // 低周波のみ: XYZ独立ノイズで大きくうねる、ざらつきなし
+      const dx = noise3(ox*FREQ_LO + tp*0.50 + 0.0,  oy*FREQ_LO + tp*0.15 + 4.1,  oz*FREQ_LO + 8.3);
+      const dy = noise3(ox*FREQ_LO + tp*0.18 + 12.5, oy*FREQ_LO + tp*0.42 + 1.7,  oz*FREQ_LO + 6.2);
+      const dz = noise3(ox*FREQ_LO + tp*0.33 + 7.9,  oy*FREQ_LO + tp*0.22 + 9.4,  oz*FREQ_LO + tp*0.28 + 2.6);
+      arr[i*3]   = ox + dx * strength;
+      arr[i*3+1] = oy + dy * strength;
+      arr[i*3+2] = oz + dz * strength;
     }
     pos.needsUpdate = true;
     geometry.computeVertexNormals();
