@@ -256,8 +256,7 @@
   <div id="upload-panel">
     <div class="upload-zone" id="zone-glb">
       <span class="icon" id="glb-icon">⬡</span>
-      <p>3D モデルをドロップ<br>または クリックして選択</p>
-      <small>GLB / GLTF 対応</small>
+      <p>3D モデルをドロップ<br><small style="opacity:0.5;font-size:9px">（任意）GLB / GLTF</small></p>
       <input type="file" id="input-glb" accept=".glb,.gltf">
     </div>
     <div class="upload-zone" id="zone-audio">
@@ -436,8 +435,49 @@ function fitModel(model){
 
 function createPlaceholder(){
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(1,3), new THREE.MeshStandardMaterial({color:0x00ffe1,metalness:0.7,roughness:0.2})));
-  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,1), new THREE.MeshBasicMaterial({color:0x00ffe1,wireframe:true,transparent:true,opacity:0.2})));
+
+  // 最外殻: 白い半透明の有機的な外枠（参考画像の白いふわっとした層）
+  const shellGeo = new THREE.IcosahedronGeometry(1.42, 4);
+  const shellMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    metalness: 0.1,
+    roughness: 0.6,
+    transparent: true,
+    opacity: 0.22,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  g.add(new THREE.Mesh(shellGeo, shellMat));
+
+  // 外殻ワイヤー: 白い細い枠線
+  const shellWireGeo = new THREE.IcosahedronGeometry(1.44, 2);
+  const shellWireMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, wireframe: true, transparent: true, opacity: 0.10
+  });
+  g.add(new THREE.Mesh(shellWireGeo, shellWireMat));
+
+  // 中層: ピンク寄りの本体
+  const outerGeo = new THREE.IcosahedronGeometry(1, 5);
+  const outerMat = new THREE.MeshStandardMaterial({
+    color: 0xc8a0b0,
+    metalness: 0.6,
+    roughness: 0.25,
+    side: THREE.DoubleSide,
+  });
+  g.add(new THREE.Mesh(outerGeo, outerMat));
+
+  // ワイヤーフレーム
+  const midGeo = new THREE.IcosahedronGeometry(0.82, 3);
+  const midMat = new THREE.MeshBasicMaterial({ color:0x00ffe1, wireframe:true, transparent:true, opacity:0.18 });
+  g.add(new THREE.Mesh(midGeo, midMat));
+
+  // 内核
+  const coreGeo = new THREE.IcosahedronGeometry(0.52, 4);
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x330020, metalness: 0.9, roughness: 0.1,
+  });
+  g.add(new THREE.Mesh(coreGeo, coreMat));
+
   return g;
 }
 
@@ -460,37 +500,38 @@ function registerMorphMeshes(root){
 }
 
 function applyVertexDeform(volume, time){
-  // 低周波ノイズ主体: 面全体がまとまってぐにゃりと動く
-  // baseStrength で無音でも微小に生きている
   const baseStrength = 0.10;
   const strength = baseStrength + Math.pow(volume, 0.8) * 1.6;
   const speed    = 0.4 + volume * 1.8;
-  const FREQ_LO  = 0.30;   // 低周波=大きなうねり
-  const FREQ_MD  = 0.90;   // 中周波=表面のしわ感
+  const FREQ_LO  = 0.30;
+  const FREQ_MD  = 0.90;
   const MIX_MD   = 0.28;
   const t = time * speed;
 
-  for(const { geometry, origPositions } of morphTargets){
+  morphTargets.forEach(({ geometry, origPositions }, layerIdx) => {
     const pos = geometry.attributes.position;
     const arr = pos.array;
     const count = pos.count;
+
+    // 外殻（layerIdx 0,1）は位相をずらしてゆっくり独立して動く
+    const phaseShift = layerIdx <= 1 ? 20.0 : 0.0;
+    const scaleShift = layerIdx <= 1 ? 0.55 : 1.0; // 外殻は動きが遅め
+
     for(let i=0;i<count;i++){
       const ox=origPositions[i*3], oy=origPositions[i*3+1], oz=origPositions[i*3+2];
-      // 低周波: XYZ独立ノイズ → 方向がバラバラに引き伸ばされる
-      const lo_x = noise3(ox*FREQ_LO+t*0.50+0.0,  oy*FREQ_LO+t*0.15+4.1,  oz*FREQ_LO+8.3);
-      const lo_y = noise3(ox*FREQ_LO+t*0.18+12.5, oy*FREQ_LO+t*0.42+1.7,  oz*FREQ_LO+6.2);
-      const lo_z = noise3(ox*FREQ_LO+t*0.33+7.9,  oy*FREQ_LO+t*0.22+9.4,  oz*FREQ_LO+t*0.28+2.6);
-      // 中周波: しわ・ヨレ感
-      const md_x = noise3(ox*FREQ_MD+t*0.70+3.3,  oy*FREQ_MD+6.1,          oz*FREQ_MD+t*0.55+1.2);
-      const md_y = noise3(ox*FREQ_MD+5.8,          oy*FREQ_MD+t*0.60+2.9,  oz*FREQ_MD+t*0.40+8.7);
-      const md_z = noise3(ox*FREQ_MD+t*0.45+9.1,  oy*FREQ_MD+t*0.35+4.6,  oz*FREQ_MD+0.8);
+      const lo_x = noise3(ox*FREQ_LO+(t+phaseShift)*0.50*scaleShift+0.0,  oy*FREQ_LO+(t+phaseShift)*0.15*scaleShift+4.1,  oz*FREQ_LO+8.3);
+      const lo_y = noise3(ox*FREQ_LO+(t+phaseShift)*0.18*scaleShift+12.5, oy*FREQ_LO+(t+phaseShift)*0.42*scaleShift+1.7,  oz*FREQ_LO+6.2);
+      const lo_z = noise3(ox*FREQ_LO+(t+phaseShift)*0.33*scaleShift+7.9,  oy*FREQ_LO+(t+phaseShift)*0.22*scaleShift+9.4,  oz*FREQ_LO+(t+phaseShift)*0.28*scaleShift+2.6);
+      const md_x = noise3(ox*FREQ_MD+(t+phaseShift)*0.70*scaleShift+3.3,  oy*FREQ_MD+6.1,          oz*FREQ_MD+(t+phaseShift)*0.55*scaleShift+1.2);
+      const md_y = noise3(ox*FREQ_MD+5.8,          oy*FREQ_MD+(t+phaseShift)*0.60*scaleShift+2.9,  oz*FREQ_MD+(t+phaseShift)*0.40*scaleShift+8.7);
+      const md_z = noise3(ox*FREQ_MD+(t+phaseShift)*0.45*scaleShift+9.1,  oy*FREQ_MD+(t+phaseShift)*0.35*scaleShift+4.6,  oz*FREQ_MD+0.8);
       arr[i*3]   = ox + (lo_x + md_x*MIX_MD) * strength;
       arr[i*3+1] = oy + (lo_y + md_y*MIX_MD) * strength;
       arr[i*3+2] = oz + (lo_z + md_z*MIX_MD) * strength;
     }
     pos.needsUpdate = true;
     geometry.computeVertexNormals();
-  }
+  });
 }
 
 // ═══════════════════════════════════════
@@ -605,7 +646,7 @@ function render(){
 let glbReady = false, audioReady = false;
 
 function checkBothReady(){
-  if(glbReady && audioReady){
+  if(audioReady){  // GLBは任意なので音声だけでSTART可能
     document.getElementById('btn-start').style.opacity = '1';
     document.getElementById('btn-start').style.pointerEvents = 'all';
   }
@@ -649,16 +690,19 @@ document.getElementById('input-audio').addEventListener('change', e=>{
 //  START
 // ═══════════════════════════════════════
 document.getElementById('btn-start').addEventListener('click', async ()=>{
-  document.getElementById('status').textContent = 'LOADING MODEL...';
+  document.getElementById('status').textContent = 'LOADING...';
   let model;
-  try { model = await loadGLB(glbBlob); }
-  catch(e){ console.error('GLB load error:', e); model = null; }
+  if(glbBlob){
+    try { model = await loadGLB(glbBlob); }
+    catch(e){ console.error('GLB load error:', e); model = null; }
+  }
   if(!model){
     model = createPlaceholder();
-    document.getElementById('status').textContent = 'GLB読み込み失敗 — プレースホルダー表示中';
-  } else {
-    document.getElementById('status').textContent = '';
   }
+  document.getElementById('status').textContent = '';
+
+  // idleModelをシーンから除去
+  if(idleModel){ threeScene.remove(idleModel); idleModel = null; }
   fitModel(model);
   modelBaseScale = model.scale.x;
   loadedModel = model;
@@ -703,15 +747,34 @@ document.getElementById('btn-reset').addEventListener('click', ()=>{
   document.getElementById('status').textContent = 'STANDBY — LOAD FILES TO BEGIN';
   document.querySelectorAll('.upload-zone').forEach(z=>z.classList.remove('loaded'));
   bgCtx.clearRect(0,0,bgW,bgH);
+  // idleModelを復元
+  idleModel = createPlaceholder();
+  fitModel(idleModel);
+  threeScene.add(idleModel);
+  registerMorphMeshes(idleModel);
   idleLoop();
 });
 
-// アイドルループ
+// アイドルループ — ページ開いた瞬間からプレースホルダーを表示・変形
 function idleLoop(){
   if(loadedModel) return;
   requestAnimationFrame(idleLoop);
-  drawBg(0,0,0);
+  time += 0.016;
+  drawBg(0, 0, 0);
+  if(idleModel){
+    idleModel.rotation.y = time * 0.25;
+    idleModel.rotation.x = Math.sin(time * 0.3) * 0.15;
+    // 無音でも微小にぐにゃる
+    applyVertexDeform(0, time);
+  }
+  threeRenderer.render(threeScene, threeCamera);
 }
+
+// ページ読み込み直後にプレースホルダーを即表示
+let idleModel = createPlaceholder();
+fitModel(idleModel);
+threeScene.add(idleModel);
+registerMorphMeshes(idleModel);
 idleLoop();
 </script>
 </body>
