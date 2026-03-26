@@ -311,9 +311,9 @@ function registerMorphMeshes(root){
 }
 
 function applyVertexDeform(volume,time){
-  const baseStrength=0.10;
-  const strength=baseStrength+Math.pow(volume,0.8)*1.6;
-  const speed=0.4+volume*1.8;
+  const baseStrength=0.18;                          // 無音時も大きめにうねる
+  const strength=baseStrength+Math.pow(volume,0.6)*2.8; // 最大3倍に増量
+  const speed=0.8+volume*3.5;                       // 速さも大幅UP
   const FREQ_LO=0.28;
   const t=time*speed;
 
@@ -322,7 +322,6 @@ function applyVertexDeform(volume,time){
     const arr=pos.array;
     const count=pos.count;
 
-    // 外殻2層は位相をずらしてゆっくり独立して歪む
     const phaseShift = layerIdx<=1 ? 20.0 : 0.0;
     const scaleShift = layerIdx<=1 ? 0.55  : 1.0;
     const tp=(t+phaseShift)*scaleShift;
@@ -402,7 +401,7 @@ function render(){
   animId=requestAnimationFrame(render);
   time+=0.016;
   const{bass,mid,hi,volume,raw}=getFreqBands();
-  smoothVolume+=(volume-smoothVolume)*(volume>smoothVolume?0.75:0.04);
+  smoothVolume+=(volume-smoothVolume)*(volume>smoothVolume?0.9:0.06);
   drawBg(bass,mid,hi);
   for(let i=0;i<BARS;i++){
     const idx=Math.floor(i/BARS*FFT);
@@ -413,9 +412,9 @@ function render(){
   document.getElementById('m-mid').style.height=(mid*100)+'%';
   document.getElementById('m-hi').style.height=(hi*100)+'%';
   if(loadedModel){
-    loadedModel.rotation.y=time*(0.25+bass*0.6);
-    loadedModel.rotation.x=Math.sin(time*0.3)*0.2+mid*0.3;
-    loadedModel.scale.setScalar(modelBaseScale*(1+bass*0.28+Math.sin(time*2)*hi*0.05));
+    loadedModel.rotation.y=time*(0.35+bass*1.2);
+    loadedModel.rotation.x=Math.sin(time*0.4)*0.3+mid*0.5;
+    loadedModel.scale.setScalar(modelBaseScale*(1+bass*0.5+Math.sin(time*3)*hi*0.12));
     if(morphTargets.length>0)applyVertexDeform(smoothVolume,time);
     loadedModel.traverse(obj=>{
       if(obj.isMesh&&obj.material&&obj.material.emissive!==undefined){
