@@ -256,33 +256,44 @@ function fitModel(model){
   model.position.sub(center.multiplyScalar(2.2/maxDim));
 }
 
+// ═══════════════════════════════════════
+//  PLACEHOLDER — 5層構造
+//  外殻2層は独立ノイズで歪む
+// ═══════════════════════════════════════
 function createPlaceholder(){
   const g=new THREE.Group();
-  // 最外殻: 白い半透明の外枠
-  const shellGeo=new THREE.IcosahedronGeometry(1.42,4);
-  const shellMat=new THREE.MeshStandardMaterial({color:0xffffff,metalness:0.1,roughness:0.6,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false});
-  g.add(new THREE.Mesh(shellGeo,shellMat));
-  // 外殻ワイヤー
-  const shellWireGeo=new THREE.IcosahedronGeometry(1.44,2);
-  const shellWireMat=new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true,transparent:true,opacity:0.10});
-  g.add(new THREE.Mesh(shellWireGeo,shellWireMat));
-  // 中層: ピンク寄りの本体
-  const outerGeo=new THREE.IcosahedronGeometry(1,5);
-  const outerMat=new THREE.MeshStandardMaterial({color:0xc8a0b0,metalness:0.6,roughness:0.25,side:THREE.DoubleSide});
-  g.add(new THREE.Mesh(outerGeo,outerMat));
-  // 内ワイヤー
-  const midGeo=new THREE.IcosahedronGeometry(0.82,3);
-  const midMat=new THREE.MeshBasicMaterial({color:0x00ffe1,wireframe:true,transparent:true,opacity:0.18});
-  g.add(new THREE.Mesh(midGeo,midMat));
-  // 内核
-  const coreGeo=new THREE.IcosahedronGeometry(0.52,4);
-  const coreMat=new THREE.MeshStandardMaterial({color:0x330020,metalness:0.9,roughness:0.1});
-  g.add(new THREE.Mesh(coreGeo,coreMat));
+  // [0] 最外殻: 白い半透明の膜
+  g.add(new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.42,4),
+    new THREE.MeshStandardMaterial({color:0xffffff,metalness:0.1,roughness:0.6,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})
+  ));
+  // [1] 外殻ワイヤー: 白い細い枠線
+  g.add(new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.44,2),
+    new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true,transparent:true,opacity:0.10})
+  ));
+  // [2] 中層本体: ピンク寄りのメタリック面
+  g.add(new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1,5),
+    new THREE.MeshStandardMaterial({color:0xc8a0b0,metalness:0.6,roughness:0.25,side:THREE.DoubleSide})
+  ));
+  // [3] シアンワイヤー: 内側の骨格線
+  g.add(new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.82,3),
+    new THREE.MeshBasicMaterial({color:0x00ffe1,wireframe:true,transparent:true,opacity:0.18})
+  ));
+  // [4] 内核: 暗い紫の球
+  g.add(new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.52,4),
+    new THREE.MeshStandardMaterial({color:0x330020,metalness:0.9,roughness:0.1})
+  ));
   return g;
 }
 
 // ═══════════════════════════════════════
 //  VERTEX DEFORM
+//  外殻2層は位相をずらした独立ノイズで歪む
+//  内側3層は通常の音量連動ノイズ
 // ═══════════════════════════════════════
 const morphTargets=[];
 
@@ -307,16 +318,20 @@ function applyVertexDeform(volume,time){
   const t=time*speed;
 
   morphTargets.forEach(({geometry,origPositions},layerIdx)=>{
-    // 外殻2層（白い膜・白いワイヤー）は変形しない
-    if(layerIdx<=1)return;
     const pos=geometry.attributes.position;
     const arr=pos.array;
     const count=pos.count;
+
+    // 外殻2層は位相をずらしてゆっくり独立して歪む
+    const phaseShift = layerIdx<=1 ? 20.0 : 0.0;
+    const scaleShift = layerIdx<=1 ? 0.55  : 1.0;
+    const tp=(t+phaseShift)*scaleShift;
+
     for(let i=0;i<count;i++){
       const ox=origPositions[i*3],oy=origPositions[i*3+1],oz=origPositions[i*3+2];
-      const dx=noise3(ox*FREQ_LO+t*0.50+0.0, oy*FREQ_LO+t*0.15+4.1, oz*FREQ_LO+8.3);
-      const dy=noise3(ox*FREQ_LO+t*0.18+12.5,oy*FREQ_LO+t*0.42+1.7, oz*FREQ_LO+6.2);
-      const dz=noise3(ox*FREQ_LO+t*0.33+7.9, oy*FREQ_LO+t*0.22+9.4, oz*FREQ_LO+t*0.28+2.6);
+      const dx=noise3(ox*FREQ_LO+tp*0.50+0.0, oy*FREQ_LO+tp*0.15+4.1, oz*FREQ_LO+8.3);
+      const dy=noise3(ox*FREQ_LO+tp*0.18+12.5,oy*FREQ_LO+tp*0.42+1.7, oz*FREQ_LO+6.2);
+      const dz=noise3(ox*FREQ_LO+tp*0.33+7.9, oy*FREQ_LO+tp*0.22+9.4, oz*FREQ_LO+tp*0.28+2.6);
       arr[i*3]  =ox+dx*strength;
       arr[i*3+1]=oy+dy*strength;
       arr[i*3+2]=oz+dz*strength;
@@ -467,6 +482,7 @@ document.getElementById('input-audio').addEventListener('change',e=>{
 document.getElementById('btn-start').addEventListener('click',async()=>{
   document.getElementById('status').textContent='LOADING...';
   let model;
+  // GLBが選ばれていればロード試行、失敗またはなければプレースホルダー
   if(glbBlob){try{model=await loadGLB(glbBlob);}catch(e){model=null;}}
   if(!model)model=createPlaceholder();
   document.getElementById('status').textContent='';
@@ -520,7 +536,7 @@ document.getElementById('btn-reset').addEventListener('click',()=>{
 });
 
 // ═══════════════════════════════════════
-//  IDLE LOOP（音楽なし・静止回転のみ）
+//  IDLE LOOP — 音楽なし・静止回転のみ
 // ═══════════════════════════════════════
 function idleLoop(){
   if(loadedModel)return;
